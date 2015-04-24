@@ -1,0 +1,307 @@
+# Code Book for Acitivity Data Cleaning Project
+Baoshi Sun  
+Friday, April 24, 2015  
+
+## Data Loading
+
+Before loading data, we should check the existence of data files. If not file is found, downloading will be performed.
+
+
+```r
+## Load necessary packages
+library(dplyr)
+```
+
+```
+## 
+## Attaching package: 'dplyr'
+## 
+## The following object is masked from 'package:stats':
+## 
+##     filter
+## 
+## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union
+```
+
+```r
+## Load the Raw Data, if not exist, try to download and unzip
+fileURL <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
+zipfn <- "getdata-projectfiles-UCI HAR Dataset.zip"
+destdir <- "UCI HAR Dataset"
+if (!file.exists(destdir)) {
+    if(!file.exists(zipfn)) {
+        ## Download the data file
+        download.file(fileURL, destfile=zipfn)
+    }
+    ## Unzip the data file
+    unzip(zipfn)
+}
+```
+
+Once we got the data files, they should be loaded into date frame:
+
+* Data Description  
+We need to load the features and labels as the common data descriptions for both testing data and training data.  
+* Testing Data  
+consists of  subject data, x data and y data.   
+* Training Data   
+consists of  subject data, x data and y data.   
+
+
+```r
+## Read txt file
+### Read the activity labels
+raw.labels <- read.table(paste(destdir, "/activity_labels.txt", sep=""))
+### Read the feature list
+raw.features <- read.table(paste(destdir, "/features.txt", sep=""))
+
+### Read the testing datasets
+raw.test.subject <- read.table(paste(destdir, "/test/subject_test.txt", sep=""), col.names=c("Subject"))
+raw.test.x <- read.table(paste(destdir, "/test/X_test.txt", sep=""))
+raw.test.y <- read.table(paste(destdir, "/test/y_test.txt", sep=""), col.names=c("Activity"))
+dim(raw.test.subject); dim(raw.test.x); dim(raw.test.y)
+```
+
+```
+## [1] 2947    1
+```
+
+```
+## [1] 2947  561
+```
+
+```
+## [1] 2947    1
+```
+
+```r
+### Read the training datasets
+raw.train.subject <- read.table(paste(destdir, "/train/subject_train.txt", sep=""), col.names=c("Subject"))
+raw.train.x <- read.table(paste(destdir, "/train/X_train.txt", sep=""))
+raw.train.y <- read.table(paste(destdir, "/train/y_train.txt", sep=""), col.names=c("Activity"))
+dim(raw.train.subject); dim(raw.train.x); dim(raw.train.y)
+```
+
+```
+## [1] 7352    1
+```
+
+```
+## [1] 7352  561
+```
+
+```
+## [1] 7352    1
+```
+
+## Merge the testing data and the training data:   
+
+Since the dataset consists of 3 parts (x, y and subject), the testing data and the training data should be combined repesctively. Then, the training data are appended to the tail of the testing data.
+
+
+```r
+## 1. Data Merge
+### Combine subject, y & x for the test set
+raw.test <- cbind(raw.test.subject, raw.test.y, raw.test.x)
+### Combine subject, y & x for the train set
+raw.train <- cbind(raw.train.subject, raw.train.y, raw.train.x)
+### Merges the training and the test sets to create one data set
+raw.data <- rbind(raw.test, raw.train)
+dim(raw.data)
+```
+
+```
+## [1] 10299   563
+```
+
+```r
+##str(raw.data)
+```
+
+## 2. Extracts only the measurements on the mean and standard deviation for each measurement.  
+
+Only variables with the feature name containing mean(), Mean(), std() or Std() are picked. In this case, some regular expression syntax is applied. In addition, we also prepared the corresponding feature name list (colnames), which will be useful in followingr steps.
+
+
+```r
+### Put the raw data into dplyr data table
+activity <- tbl_df(raw.data)
+### mean() and std() column list, need to add up 2 (Subject, Activity)
+collist <- grep("[Mm]ean\\()|[Ss]td\\()", raw.features$V2)
+colnames <- grep("[Mm]ean\\()|[Ss]td\\()", raw.features$V2, value=TRUE)
+collist <- collist + 2
+collist <- c(1, 2, collist)
+colnames <- c("Subject", "Activity", colnames)
+### Select columns
+activity <- activity[, c(collist)]
+```
+
+## 3. Uses descriptive activity names to name the activities in the data set
+
+Here we use a for-loop to replace the label of activities with the actual names. In order to manipulate data, all labels are converted to charater class.
+
+
+```r
+### Change the Activity to charater class
+activity$Activity <- as.character(activity$Activity)
+raw.labels$V1 <- as.character(raw.labels$V1)
+raw.labels$V2 <- as.character(raw.labels$V2)
+for( i in 1:nrow(raw.labels) ) {
+    activity$Activity <- gsub(raw.labels[i,1], raw.labels[i,2], activity$Activity)
+}
+```
+
+## 4. Appropriately labels the data set with descriptive variable names.  
+
+
+```r
+names(activity) <- colnames
+```
+
+## 5. From the data set in step 4, creates a second, independent tidy data set with the average of each variable for each activity and each subject.   
+
+Tidy data is saved into a text file named 'tidydata.txt', which has the header (feature names) but no row names (according to the instruction). To verify the result, we can reload the file and check it's content.
+
+
+```r
+tidy.data <- group_by(activity, Subject, Activity) %>%
+    summarise_each(funs(mean))
+names(tidy.data) <- colnames
+
+### Save the tidy dataset
+write.table(tidy.data, "./tidydata.txt", row.name=FALSE)
+
+### Load and test 
+tidytest <- read.table("./tidydata.txt", header=TRUE)
+dim(tidytest); names(tidytest)
+```
+
+```
+## [1] 180  68
+```
+
+```
+##  [1] "Subject"                     "Activity"                   
+##  [3] "tBodyAcc.mean...X"           "tBodyAcc.mean...Y"          
+##  [5] "tBodyAcc.mean...Z"           "tBodyAcc.std...X"           
+##  [7] "tBodyAcc.std...Y"            "tBodyAcc.std...Z"           
+##  [9] "tGravityAcc.mean...X"        "tGravityAcc.mean...Y"       
+## [11] "tGravityAcc.mean...Z"        "tGravityAcc.std...X"        
+## [13] "tGravityAcc.std...Y"         "tGravityAcc.std...Z"        
+## [15] "tBodyAccJerk.mean...X"       "tBodyAccJerk.mean...Y"      
+## [17] "tBodyAccJerk.mean...Z"       "tBodyAccJerk.std...X"       
+## [19] "tBodyAccJerk.std...Y"        "tBodyAccJerk.std...Z"       
+## [21] "tBodyGyro.mean...X"          "tBodyGyro.mean...Y"         
+## [23] "tBodyGyro.mean...Z"          "tBodyGyro.std...X"          
+## [25] "tBodyGyro.std...Y"           "tBodyGyro.std...Z"          
+## [27] "tBodyGyroJerk.mean...X"      "tBodyGyroJerk.mean...Y"     
+## [29] "tBodyGyroJerk.mean...Z"      "tBodyGyroJerk.std...X"      
+## [31] "tBodyGyroJerk.std...Y"       "tBodyGyroJerk.std...Z"      
+## [33] "tBodyAccMag.mean.."          "tBodyAccMag.std.."          
+## [35] "tGravityAccMag.mean.."       "tGravityAccMag.std.."       
+## [37] "tBodyAccJerkMag.mean.."      "tBodyAccJerkMag.std.."      
+## [39] "tBodyGyroMag.mean.."         "tBodyGyroMag.std.."         
+## [41] "tBodyGyroJerkMag.mean.."     "tBodyGyroJerkMag.std.."     
+## [43] "fBodyAcc.mean...X"           "fBodyAcc.mean...Y"          
+## [45] "fBodyAcc.mean...Z"           "fBodyAcc.std...X"           
+## [47] "fBodyAcc.std...Y"            "fBodyAcc.std...Z"           
+## [49] "fBodyAccJerk.mean...X"       "fBodyAccJerk.mean...Y"      
+## [51] "fBodyAccJerk.mean...Z"       "fBodyAccJerk.std...X"       
+## [53] "fBodyAccJerk.std...Y"        "fBodyAccJerk.std...Z"       
+## [55] "fBodyGyro.mean...X"          "fBodyGyro.mean...Y"         
+## [57] "fBodyGyro.mean...Z"          "fBodyGyro.std...X"          
+## [59] "fBodyGyro.std...Y"           "fBodyGyro.std...Z"          
+## [61] "fBodyAccMag.mean.."          "fBodyAccMag.std.."          
+## [63] "fBodyBodyAccJerkMag.mean.."  "fBodyBodyAccJerkMag.std.."  
+## [65] "fBodyBodyGyroMag.mean.."     "fBodyBodyGyroMag.std.."     
+## [67] "fBodyBodyGyroJerkMag.mean.." "fBodyBodyGyroJerkMag.std.."
+```
+
+```r
+#head(tidytest)
+```
+
+## Data Dictionary
+
+The tidy data contains 180 records, corresponding to 30 subjects' average activity data for 6 types of activities.  
+
+There are 68 variables in the tidy data. The first two variables stands for Subject and Activity respectively. And the rest of 66 variables are all the average of mean values and standard deviation values for data collected from different sensors.  
+
+Subject  [integer]    - Identifies the subject who performed the activity  
+
+Activity [character]  - Name of activity, including:   
+            --    LAYING             
+            --    SITTING            
+            --    STANDING           
+            --    WALKING           
+            --    WALKING_DOWNSTAIRS    
+            --    WALKING_UPSTAIRS   
+                
+tBodyAcc.mean...X       [numeric]  
+tBodyAcc.mean...Y       [numeric]  
+tBodyAcc.mean...Z       [numeric]  
+tBodyAcc.std...X        [numeric]         
+tBodyAcc.std...Y        [numeric]  
+tBodyAcc.std...Z        [numeric]         
+tGravityAcc.mean...X    [numeric]         
+tGravityAcc.mean...Y    [numeric]     
+tGravityAcc.mean...Z    [numeric]      
+tGravityAcc.std...X     [numeric]     
+tGravityAcc.std...Y     [numeric]      
+tGravityAcc.std...Z     [numeric]     
+tBodyAccJerk.mean...X   [numeric]      
+tBodyAccJerk.mean...Y   [numeric]     
+tBodyAccJerk.mean...Z   [numeric]      
+tBodyAccJerk.std...X    [numeric]     
+tBodyAccJerk.std...Y    [numeric]      
+tBodyAccJerk.std...Z    [numeric]     
+tBodyGyro.mean...X      [numeric]      
+tBodyGyro.mean...Y      [numeric]     
+tBodyGyro.mean...Z      [numeric]      
+tBodyGyro.std...X       [numeric]     
+tBodyGyro.std...Y       [numeric]      
+tBodyGyro.std...Z       [numeric]     
+tBodyGyroJerk.mean...X  [numeric]      
+tBodyGyroJerk.mean...Y  [numeric]     
+tBodyGyroJerk.mean...Z  [numeric]      
+tBodyGyroJerk.std...X   [numeric]     
+tBodyGyroJerk.std...Y   [numeric]      
+tBodyGyroJerk.std...Z   [numeric]     
+tBodyAccMag.mean..      [numeric]      
+tBodyAccMag.std..       [numeric]     
+tGravityAccMag.mean..   [numeric]      
+tGravityAccMag.std..    [numeric]     
+tBodyAccJerkMag.mean..  [numeric]      
+tBodyAccJerkMag.std..   [numeric]     
+tBodyGyroMag.mean..     [numeric]      
+tBodyGyroMag.std..      [numeric]     
+tBodyGyroJerkMag.mean.. [numeric]      
+tBodyGyroJerkMag.std..  [numeric]     
+fBodyAcc.mean...X       [numeric]      
+fBodyAcc.mean...Y       [numeric]     
+fBodyAcc.mean...Z       [numeric]      
+fBodyAcc.std...X        [numeric]     
+fBodyAcc.std...Y        [numeric]      
+fBodyAcc.std...Z        [numeric]     
+fBodyAccJerk.mean...X   [numeric]      
+fBodyAccJerk.mean...Y   [numeric]     
+fBodyAccJerk.mean...Z   [numeric]      
+fBodyAccJerk.std...X    [numeric]     
+fBodyAccJerk.std...Y    [numeric]      
+fBodyAccJerk.std...Z    [numeric]     
+fBodyGyro.mean...X      [numeric]      
+fBodyGyro.mean...Y      [numeric]     
+fBodyGyro.mean...Z      [numeric]      
+fBodyGyro.std...X       [numeric]     
+fBodyGyro.std...Y       [numeric]      
+fBodyGyro.std...Z       [numeric]     
+fBodyAccMag.mean..      [numeric]      
+fBodyAccMag.std..       [numeric]     
+fBodyBodyAccJerkMag.mean..  [numeric]    
+fBodyBodyAccJerkMag.std..   [numeric]  
+fBodyBodyGyroMag.mean..     [numeric]  
+fBodyBodyGyroMag.std..      [numeric]  
+fBodyBodyGyroJerkMag.mean.. [numeric]  
+fBodyBodyGyroJerkMag.std..  [numeric]  
